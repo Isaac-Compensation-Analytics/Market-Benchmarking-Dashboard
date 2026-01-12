@@ -1,4 +1,3 @@
-
 """
 Market Benchmarking Dashboard (Dash) — LOCAL MODE (single Excel file, 2 tabs)
 
@@ -30,6 +29,12 @@ Breakouts (restructured):
     - Job Family filter
 - Output: ALL Job Titles within the selected Job Family, with Headcount and ΔP10..ΔP90
   (no max job cap)
+
+FIX INCLUDED:
+- Stops Plotly/Dash “graph grows bigger every second” resize loop by:
+    - Forcing a fixed Graph container height via dcc.Graph(style=...)
+    - Setting config responsive=True
+    - Setting autosize=False on all figures
 """
 
 import os
@@ -45,7 +50,7 @@ import plotly.express as px
 # -----------------------------
 # FILE (single workbook with 2 tabs)
 # -----------------------------
-EMPLOYEE_FILE = os.getenv("EMPLOYEE_FILE", "capital_one_employee_population.xlsx")
+EMPLOYEE_FILE = os.getenv("EMPLOYEE_FILE", "market_benchmark_demo_data.xlsx")
 EMPLOYEE_SHEET = "Employee Source Data"
 MARKET_SHEET = "National Market Data"
 
@@ -75,6 +80,10 @@ BRAND_BG = "#F6F7F9"
 CARD_BG = "#FFFFFF"
 BORDER = "#E5E7EB"
 PLOT_TEMPLATE = "plotly_white"
+
+# Fixed graph sizing to avoid Plotly autosize feedback loop (graphs growing repeatedly)
+GRAPH_STYLE = {"height": "420px"}
+GRAPH_CONFIG = {"displayModeBar": False, "responsive": True}
 
 # Market Area Differential factors
 AREA_FACTORS = {"High": 1.12, "Mid": 1.00, "Low": 0.95}
@@ -199,21 +208,6 @@ def card(children, title=None):
             html.Div(title, style={"fontWeight": "800", "color": BRAND_DARK, "marginBottom": "8px"}) if title else None,
             children,
         ],
-    )
-
-
-def banner(text):
-    return html.Div(
-        text,
-        style={
-            "background": "#FFF1F2",
-            "border": f"1px solid {BORDER}",
-            "padding": "10px 12px",
-            "borderRadius": "12px",
-            "marginBottom": "12px",
-            "fontSize": "13px",
-            "color": BRAND_DARK,
-        },
     )
 
 
@@ -355,8 +349,11 @@ def inject_employee_variability_from_market_with_area_and_perf(
     def sigmoid(z):
         return 1 / (1 + np.exp(-z))
 
-    z = logit(u0) + area_effect_strength * area_score + perf_effect_strength * perf_score + rng.normal(
-        0, 0.12, size=len(emp2)
+    z = (
+        logit(u0)
+        + area_effect_strength * area_score
+        + perf_effect_strength * perf_score
+        + rng.normal(0, 0.12, size=len(emp2))
     )
     u = np.clip(sigmoid(z), 0.02, 0.98)
 
@@ -390,13 +387,9 @@ def inject_employee_variability_from_market_with_area_and_perf(
             out = np.maximum(out, 0.0)
         return out
 
-    base_like = gen_component("Base Pay", base_noise_sd, floor_zero=False)
-    bonus = gen_component("Bonus Paid", bonus_noise_sd, floor_zero=True, zero_prob=bonus_zero_prob)
-    total = gen_component("Total Compensation", total_noise_sd, floor_zero=False)
-
-    emp2[base_col] = base_like
-    emp2[bonus_col] = bonus
-    emp2[total_col] = total
+    emp2[base_col] = gen_component("Base Pay", base_noise_sd, floor_zero=False)
+    emp2[bonus_col] = gen_component("Bonus Paid", bonus_noise_sd, floor_zero=True, zero_prob=bonus_zero_prob)
+    emp2[total_col] = gen_component("Total Compensation", total_noise_sd, floor_zero=False)
 
     # Drop temp market cols so later merges don't suffix/break
     drop_cols = [f"{metric} {pct}" for metric in ["Base Pay", "Bonus Paid", "Total Compensation"] for pct in PCTS]
@@ -433,7 +426,6 @@ def build_model_df(employees: pd.DataFrame, market: pd.DataFrame) -> pd.DataFram
             market[get_market_col(metric, pct)] = pd.to_numeric(market[get_market_col(metric, pct)], errors="coerce")
 
     df0 = employees.merge(market, on="Job Title", how="left")
-
     df0["Market Factor"] = df0["Area Differential"].apply(area_factor)
 
     for pct in PCTS:
@@ -468,7 +460,7 @@ def market_cols_for_metric(metric_value):
 # -----------------------------
 def build_job_family_breakout_table(d_all: pd.DataFrame, metric: str, sort_pct: str, sort_dir: str) -> go.Figure:
     if metric not in ["Base Pay", "Bonus Paid", "Total Compensation"]:
-        return go.Figure().update_layout(template=PLOT_TEMPLATE, title="Unknown metric for breakout")
+        return go.Figure().update_layout(template=PLOT_TEMPLATE, title="Unknown metric for breakout", autosize=False)
 
     if sort_pct not in PCTS:
         sort_pct = "P50"
@@ -476,12 +468,12 @@ def build_job_family_breakout_table(d_all: pd.DataFrame, metric: str, sort_pct: 
         sort_dir = "asc"
 
     if "Job Title" not in d_all.columns:
-        return go.Figure().update_layout(template=PLOT_TEMPLATE, title="Missing column: Job Title")
+        return go.Figure().update_layout(template=PLOT_TEMPLATE, title="Missing column: Job Title", autosize=False)
 
     rows = []
     mcols = market_cols_for_metric(metric)
 
-    # ✅ ALL jobs (no .head() cap)
+    # ALL jobs (no cap)
     jobs = (
         d_all.groupby("Job Title")["Employee ID"]
         .count()
@@ -510,6 +502,7 @@ def build_job_family_breakout_table(d_all: pd.DataFrame, metric: str, sort_pct: 
         return go.Figure().update_layout(
             template=PLOT_TEMPLATE,
             height=560,
+            autosize=False,
             margin=dict(l=10, r=10, t=10, b=10),
             paper_bgcolor="#FFFFFF",
             plot_bgcolor="#FFFFFF",
@@ -554,6 +547,7 @@ def build_job_family_breakout_table(d_all: pd.DataFrame, metric: str, sort_pct: 
     fig.update_layout(
         template=PLOT_TEMPLATE,
         height=560,
+        autosize=False,
         margin=dict(l=10, r=10, t=40, b=10),
         paper_bgcolor="#FFFFFF",
         plot_bgcolor="#FFFFFF",
@@ -583,6 +577,7 @@ def load_data_local_single_file():
     market = pd.read_excel(EMPLOYEE_FILE, sheet_name=MARKET_SHEET)
     market.columns = [str(c).strip() for c in market.columns]
 
+    # Inject variability (realism)
     employees = inject_employee_variability_from_market_with_area_and_perf(
         employees,
         market,
@@ -592,16 +587,10 @@ def load_data_local_single_file():
     )
 
     df_local = build_model_df(employees, market)
-
-    banner_text = (
-        f"LOCAL DATA: {os.path.basename(EMPLOYEE_FILE)} [{EMPLOYEE_SHEET}] + [{MARKET_SHEET}] | "
-        "Market = National × Area Diff (High +12%, Mid 0%, Low -5%) | "
-        "All roles treated as SALARY"
-    )
-    return df_local, banner_text
+    return df_local
 
 
-df, data_banner = load_data_local_single_file()
+df = load_data_local_single_file()
 
 
 # -----------------------------
@@ -609,7 +598,7 @@ df, data_banner = load_data_local_single_file()
 # -----------------------------
 app = Dash(__name__)
 server = app.server
-app.title = "Market Benchmarking Dashboard (Local)"
+app.title = "Market Benchmarking Dashboard"
 
 
 app.layout = html.Div(
@@ -623,10 +612,8 @@ app.layout = html.Div(
                     html.Div("Employee vs Market — National Market + Area Diff adjustment",
                              style={"fontSize": "13px", "color": BRAND_GRAY}),
                 ]),
-                html.Div("Benchmarking demo", style={"fontWeight": "900", "color": BRAND_RED}),
             ],
         ),
-        banner(data_banner),
 
         # -----------------------------
         # TOP FILTERS (Metric, Job Title, Area Diff at far right)
@@ -679,11 +666,11 @@ app.layout = html.Div(
         html.Div(
             style={"display": "grid", "gridTemplateColumns": "1.25fr 0.75fr", "gap": "16px", "marginTop": "12px"},
             children=[
-                card(dcc.Graph(id="pct_line", config={"displayModeBar": False}), title="Percentile Comparison"),
+                card(dcc.Graph(id="pct_line", config=GRAPH_CONFIG, style=GRAPH_STYLE), title="Percentile Comparison"),
                 card(
                     children=html.Div(
                         children=[
-                            dcc.Graph(id="delta_table", config={"displayModeBar": False}),
+                            dcc.Graph(id="delta_table", config=GRAPH_CONFIG, style=GRAPH_STYLE),
                             html.Div(
                                 id="delta_headcount_text",
                                 style={"marginTop": "8px", "color": BRAND_DARK, "fontWeight": "900"},
@@ -698,7 +685,7 @@ app.layout = html.Div(
         html.Div(
             style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "16px", "marginTop": "16px"},
             children=[
-                card(dcc.Graph(id="dist_hist", config={"displayModeBar": False}), title="Employee Distribution vs Market Reference"),
+                card(dcc.Graph(id="dist_hist", config=GRAPH_CONFIG, style=GRAPH_STYLE), title="Employee Distribution vs Market Reference"),
                 card(
                     title="Costing Scenarios",
                     children=html.Div(
@@ -729,7 +716,7 @@ app.layout = html.Div(
                                     ),
                                 ],
                             ),
-                            dcc.Graph(id="cost_plot", config={"displayModeBar": False}),
+                            dcc.Graph(id="cost_plot", config=GRAPH_CONFIG, style=GRAPH_STYLE),
                         ]
                     ),
                 ),
@@ -797,7 +784,7 @@ app.layout = html.Div(
                             ]),
                         ],
                     ),
-                    dcc.Graph(id="breakout_table", config={"displayModeBar": False}),
+                    dcc.Graph(id="breakout_table", config=GRAPH_CONFIG, style={"height": "560px"}),
                 ]
             ),
         ),
@@ -840,7 +827,7 @@ def update_job_title_options(area, current_value):
 def update_main_dashboard(metric, job_title, area, perf_filter):
     d_all = apply_filters(df, job_title=job_title, area=area)
 
-    empty = go.Figure().update_layout(template=PLOT_TEMPLATE)
+    empty = go.Figure().update_layout(template=PLOT_TEMPLATE, autosize=False)
     if d_all.empty:
         kpis = html.Div("No data under current filters.", style={"color": BRAND_DARK, "fontWeight": "800"})
         return kpis, empty, empty, "", empty, empty
@@ -899,6 +886,7 @@ def update_main_dashboard(metric, job_title, area, perf_filter):
         title=f"Percentile Comparison — {metric} | {title_label} | {area_label}",
         yaxis_title=metric,
         height=420,
+        autosize=False,
         margin=dict(l=50, r=20, t=60, b=50),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         paper_bgcolor="#FFFFFF",
@@ -945,6 +933,7 @@ def update_main_dashboard(metric, job_title, area, perf_filter):
     fig_delta_table.update_layout(
         template=PLOT_TEMPLATE,
         height=420,
+        autosize=False,
         margin=dict(l=10, r=10, t=10, b=10),
         paper_bgcolor="#FFFFFF",
         plot_bgcolor="#FFFFFF",
@@ -960,6 +949,7 @@ def update_main_dashboard(metric, job_title, area, perf_filter):
     )
     fig_hist.update_layout(
         height=420,
+        autosize=False,
         margin=dict(l=50, r=20, t=60, b=50),
         paper_bgcolor="#FFFFFF",
         plot_bgcolor="#FFFFFF",
@@ -993,6 +983,7 @@ def update_main_dashboard(metric, job_title, area, perf_filter):
                 template=PLOT_TEMPLATE,
                 title="Costing Scenarios — Base Pay | (No employees for selected performance rating filter)",
                 height=420,
+                autosize=False,
                 paper_bgcolor="#FFFFFF",
                 plot_bgcolor="#FFFFFF",
                 font=dict(color=BRAND_DARK),
@@ -1016,6 +1007,7 @@ def update_main_dashboard(metric, job_title, area, perf_filter):
             )
             fig_cost.update_layout(
                 height=420,
+                autosize=False,
                 margin=dict(l=50, r=20, t=60, b=50),
                 paper_bgcolor="#FFFFFF",
                 plot_bgcolor="#FFFFFF",
@@ -1032,6 +1024,7 @@ def update_main_dashboard(metric, job_title, area, perf_filter):
         )
         fig_cost.update_layout(
             height=420,
+            autosize=False,
             margin=dict(l=50, r=20, t=60, b=50),
             paper_bgcolor="#FFFFFF",
             plot_bgcolor="#FFFFFF",
@@ -1056,7 +1049,7 @@ def update_breakout_table(breakout_metric, breakout_sort_pct, breakout_sort_dir,
 
     title_suffix = "All Job Families" if breakout_family == "All" else str(breakout_family)
     fig = build_job_family_breakout_table(d_all, breakout_metric, breakout_sort_pct, breakout_sort_dir)
-    fig.update_layout(title=f"Job Titles Breakout — {breakout_metric} | {title_suffix}")
+    fig.update_layout(title=f"Job Titles Breakout — {breakout_metric} | {title_suffix}", autosize=False)
     return fig
 
 
