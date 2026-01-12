@@ -1,5 +1,7 @@
 """
 Market Benchmarking Dashboard (Dash) — LOCAL MODE (single Excel file, 2 tabs)
+## Live Demo
+**Render:** hhttps://market-benchmarking-dashboard.onrender.com
 
 UPDATED RULES
 - ALL roles are treated as SALARY
