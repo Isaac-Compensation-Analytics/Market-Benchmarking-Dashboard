@@ -1,5 +1,7 @@
-# Market Benchmarking Dashboard  
-**Employee Pay Competitiveness & Costing Analysis**
+
+## Market Benchmarking Dashboard  
+**Employee Pay Competitiveness & Costing Analysis**## Executive Summary
+This dashboard benchmarks employee pay vs. national market percentiles (P10–P90), adjusts market reference by Area Differential, highlights below-market roles, and estimates the cost to move targeted employees to market reference points (P10/P25/P50). Breakouts provide job-level competitiveness views within a selected Job Family.
 
 ## Overview
 This project is an interactive **market benchmarking dashboard** built to help compensation and HR teams understand how employee pay compares to external market data and to quantify the **cost of addressing below-market pay**.
